@@ -1,0 +1,114 @@
+from machine import UART
+import time
+import heapq
+
+uart = UART(2, baudrate=115200, rx=16, tx=17)  # Pas pinnen aan
+
+# --- A* algoritme ---
+def heuristic(a, b):
+    return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+def astar(grid, start, goal):
+    rows, cols = len(grid), len(grid[0])
+    open_set = []
+    heapq.heappush(open_set, (heuristic(start, goal), 0, start))
+    came_from = {}
+    g_score = {start: 0}
+
+    while open_set:
+        _, cost, current = heapq.heappop(open_set)
+        if current == goal:
+            path = []
+            while current in came_from:
+                path.append(current)
+                current = came_from[current]
+            path.append(start)
+            path.reverse()
+            return path
+
+        for dx, dy in [(1,0), (-1,0), (0,1), (0,-1)]:
+            neighbor = (current[0] + dx, current[1] + dy)
+            x, y = neighbor
+            if 0 <= x < rows and 0 <= y < cols and grid[x][y] == 0:
+                tentative_g_score = cost + 1
+                if tentative_g_score < g_score.get(neighbor, 1e9):
+                    came_from[neighbor] = current
+                    g_score[neighbor] = tentative_g_score
+                    f_score = tentative_g_score + heuristic(neighbor, goal)
+                    heapq.heappush(open_set, (f_score, tentative_g_score, neighbor))
+    return None
+
+def convert_path_to_directions(path):
+    directions = []
+    directions_nl = []
+    for i in range(len(path)-1):
+        x1, y1 = path[i]
+        x2, y2 = path[i+1]
+        if x2 == x1 + 1:
+            directions.append('D')  # Down
+            directions_nl.append("omlaag")
+        elif x2 == x1 - 1:
+            directions.append('U')  # Up
+            directions_nl.append("omhoog")
+        elif y2 == y1 + 1:
+            directions.append('R')  # Right
+            directions_nl.append("rechts")
+        elif y2 == y1 - 1:
+            directions.append('L')  # Left
+            directions_nl.append("links")
+    return directions, directions_nl
+
+# --- Voorbeeld grid ---
+grid = [
+    [0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+    [0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+    [0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0],
+]
+
+start = (0, 0)
+goal = (12, 19)
+
+path = astar(grid, start, goal)
+if path is None:
+    uart.write(b"NOPATH\n")
+    print("Geen pad gevonden.")
+else:
+    directions, directions_nl = convert_path_to_directions(path)
+    print("Pad gevonden:")
+    for i, richt in enumerate(directions_nl, 1):
+        print(f"Stap {i}: {richt}")
+    # UART sturen
+    for d in directions:
+        uart.write((d + "\n").encode())
+
+# --- Communicatie en besturing ---
+current_step = 0
+
+while True:
+    if uart.any():
+        line = uart.readline()
+        if line:
+            msg = line.decode('utf-8').strip()
+            if msg == "READY":
+                # Webots is klaar voor volgende stap
+                if current_step < len(directions):
+                    uart.write((directions[current_step] + "\n").encode())
+                    current_step += 1
+                else:
+                    uart.write(b"S\n")  # Stop
+            # Eventueel andere commando's verwerken
+
+    # Hier kun je motor aansturing toevoegen per commando als nodig
+
+
+
